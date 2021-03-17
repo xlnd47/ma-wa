@@ -1,4 +1,5 @@
 {
-  "name": "ma-wa",
-  "language": "js"
+	"name": "ma-wa",
+	"language": "typescript",
+	"manager": "npm"
 }
