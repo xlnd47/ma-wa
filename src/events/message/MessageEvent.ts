@@ -1,6 +1,7 @@
 import BaseEvent from '../../utils/structures/BaseEvent';
 import { Message } from 'discord.js';
 import DiscordClient from '../../client/client';
+import { Guild, GuildModel } from '../../utils/models/guild.model';
 
 export default class MessageEvent extends BaseEvent {
   constructor() {
@@ -9,7 +10,18 @@ export default class MessageEvent extends BaseEvent {
 
   async run(client: DiscordClient, message: Message) {
     if (message.author.bot) return;
-    if (message.content.startsWith(client.prefix)) {
+    if (!message.guild) return; //skip private messages for now
+
+    let guild = await GuildModel.findOne({guildId: message.guild.id}).exec();
+
+    if(!guild){
+      let registerGuild = new Guild()
+      registerGuild.guildId = message.guild.id 
+      registerGuild.prefix = '?'
+      guild = await GuildModel.create(registerGuild);
+    }
+
+    if (message.content.startsWith(guild.prefix)) {
       const [cmdName, ...cmdArgs] = message.content
         .slice(client.prefix.length)
         .trim()

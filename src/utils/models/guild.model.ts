@@ -1,8 +1,7 @@
 import { prop, getModelForClass } from '@typegoose/typegoose';
-import * as mongoose from 'mongoose';
 
 export class Guild {
-    @prop()
+    @prop({required: true, unique: true})
     public guildId: string;
 
     @prop()
