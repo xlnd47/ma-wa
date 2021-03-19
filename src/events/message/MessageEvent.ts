@@ -23,7 +23,7 @@ export default class MessageEvent extends BaseEvent {
 
     if (message.content.startsWith(guild.prefix)) {
       const [cmdName, ...cmdArgs] = message.content
-        .slice(client.prefix.length)
+        .slice(guild.prefix.length)
         .trim()
         .split(/\s+/);
       const command = client.commands.get(cmdName);
