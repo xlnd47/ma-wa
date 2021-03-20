@@ -8,7 +8,6 @@ import * as mongoose from "mongoose";
 	await mongoose.connect(process.env.MONGODB_CONNECTION_STRING ?? "mongodb://localhost:27017/", {
 		useNewUrlParser: true,
 		useUnifiedTopology: true,
-		dbName: "mawa-dev",
 	});
 	await registerCommands(client, "../commands");
 	await registerEvents(client, "../events");

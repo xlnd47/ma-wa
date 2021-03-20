@@ -10,25 +10,27 @@ export default class ReactRolesCommand extends BaseCommand {
 		super("reactroles", "server-config", []);
 	}
 
+	// TODO: Add documentation somewhere so the user knows which arguments are available
 	async run(client: DiscordClient, message: Message, args: Array<string>) {
-		if (args.length > 0) {
+		if (args.length >= 1) {
 			switch (args[0].toLowerCase()) {
 				case "create":
 					await createNewReactRolesMessage(message);
+					break;
+				case "add":
+					await addNewReactRole(message, args.slice(1));
 					break;
 				default:
 					message
 						.reply(`"${args[0]}" isn't a valid argument.`)
 						.then((message) => DeleteWithDefaultTimeout(message));
 			}
-		} else {
-			// TODO: Add documentation somewhere so the user knows which arguments are available
-			await message
-				.reply(
-					"Please provide an argument to this command, telling me what I should do."
-				)
-				.then((message) => DeleteWithDefaultTimeout(message));
+			return;
 		}
+
+		await message
+			.reply("Please provide an argument to this command, telling me what I should do.")
+			.then((message) => DeleteWithDefaultTimeout(message));
 	}
 }
 
@@ -36,32 +38,28 @@ const createNewReactRolesMessage = async (message: Message) => {
 	if (!message.guild) return;
 	let guild = await GuildModel.findOne({ guildId: message.guild.id });
 
-	// is er een bericht id in de db?
 	if (!guild?.reactRolesMessageId) {
-		// nee: kijk of er reactroles in de db zitten
 		if (guild?.reactRoles?.size && guild?.reactRoles?.size > 0) {
-			// ja: maak aan
 			let colorMessage = "#341AC7";
 			let titleMessage = "React with an emoji to get a role!";
 			let descriptionMessage = "The list below describes which roles are available:\n";
 
-			let emojis: GuildEmoji[] = [];
-			guild.reactRoles.forEach((roleName, emojiName) => {
-				let emoji = message.guild?.emojis.cache.find(
-					(emoji) => emoji.name === emojiName
-				);
-				emoji && emojis.push(emoji);
-				descriptionMessage += `${emoji ?? "???"} = ${roleName}\n`;
+			let emojis: string[] = [];
+			guild.reactRoles.forEach((roleId, emoji) => {
+				let role = message.guild?.roles.cache.find((role) => role.id === roleId);
+				emojis.push(emoji);
+				descriptionMessage += `${emoji} = ${role?.name ?? "???"}\n`;
 			});
 
 			let reactRolesMessage = await message.channel.send(
 				GetEmbed(colorMessage, titleMessage, descriptionMessage)
 			);
-			// save id in de db
-			guild.updateOne({ reactRolesMessageId: reactRolesMessage.id });
-			// voeg emojis toe
-			await Promise.all([emojis.map((emoji) => reactRolesMessage.react(emoji))]);
-			// delete user's message
+
+			let dbUpdate = guild.updateOne({ reactRolesMessageId: reactRolesMessage.id }).exec();
+
+			// Maps the emoji array to promises
+			await Promise.all([emojis.map((emoji) => reactRolesMessage.react(emoji)), dbUpdate]);
+
 			await message.delete();
 			return;
 		}
@@ -79,3 +77,50 @@ const createNewReactRolesMessage = async (message: Message) => {
 		.reply("There already is a reactroles message.")
 		.then((message) => DeleteWithDefaultTimeout(message));
 };
+
+const addNewReactRole = async (message: Message, args: Array<string>) => {
+	if (!message.guild) return;
+	let guild = await GuildModel.findOne({ guildId: message.guild.id });
+	if (!guild) return;
+
+	if (args.length >= 2) {
+		let emojiInput = args[0];
+		if (!isEmoji(emojiInput)) {
+			await message.reply(`"${emojiInput}" is not a valid emoji!`);
+			return;
+		}
+
+		let roleInput = args[1];
+		let role = message.guild?.roles.cache.find((role) => role.name === roleInput);
+
+		if (!role) {
+			await message.reply(`"${roleInput}" is not a valid role!`);
+			return;
+		}
+
+		guild.set(`reactRoles.${emojiInput}`, role.id);
+		await guild
+			.save()
+			.catch((err) => {
+				console.log(err?.message ?? err);
+				message.reply(`Ooops, errorken`);
+			})
+			.then(() => message.reply(`Role Added succesfully!`));
+
+		return;
+	}
+
+	await message.reply(
+		`No/too few arguments provided. Make sure to provide an emoji and rolename.\nLike so: \`${guild.prefix}reactroles add EMOJI ROLE_NAME\``
+	);
+};
+
+const removeEmoji = (str: string) =>
+	str.replace(
+		new RegExp(
+			"\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]",
+			"g"
+		),
+		""
+	);
+const isEmoji = (str: string) => !removeEmoji(str).length;

@@ -10,7 +10,7 @@ export class Guild {
 	@prop()
 	public reactRolesMessageId: string;
 
-	@prop()
+	@prop({ type: () => String })
 	public reactRoles: Map<string, string>;
 }
 
