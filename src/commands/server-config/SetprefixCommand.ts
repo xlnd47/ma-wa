@@ -17,11 +17,7 @@ export default class SetprefixCommand extends BaseCommand {
       message.reply(`Give a prefix to set (ex. ${guild.prefix}setprefix !)`);
       return;
     }
-    // if(args[0].length > 1){
-    //   message.reply('Make sure your prefix is only 1 character long.');
-    //   return;
-    // }
-    
+
     await guild.update({prefix: args[0]}).exec().catch(
       reason => {
         console.log(reason);
