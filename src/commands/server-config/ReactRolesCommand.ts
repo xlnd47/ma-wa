@@ -1,9 +1,9 @@
-import { GuildEmoji, Message, Role } from "discord.js";
+import { Message, MessageReaction, User } from "discord.js";
 import BaseCommand from "../../utils/structures/BaseCommand";
 import DiscordClient from "../../client/client";
 import { GuildModel } from "../../utils/models/guild.model";
 import { GetEmbed } from "../../utils/structures/Embed";
-import { DeleteWithDefaultTimeout } from "../../utils/helpers/MessageHelper";
+import { deleteWithDefaultTimeoutAsync } from "../../utils/helpers/MessageHelper";
 
 export default class ReactRolesCommand extends BaseCommand {
 	constructor() {
@@ -15,26 +15,24 @@ export default class ReactRolesCommand extends BaseCommand {
 		if (args.length >= 1) {
 			switch (args[0].toLowerCase()) {
 				case "create":
-					await createNewReactRolesMessage(message);
+					await createNewReactRolesMessageAsync(message);
 					break;
 				case "add":
-					await addNewReactRole(message, args.slice(1));
+					await addNewReactRoleAsync(message, client);
 					break;
 				default:
-					message
-						.reply(`"${args[0]}" isn't a valid argument.`)
-						.then((message) => DeleteWithDefaultTimeout(message));
+					await deleteWithDefaultTimeoutAsync(await message.reply(`"${args[0]}" isn't a valid argument.`));
 			}
 			return;
 		}
 
-		await message
-			.reply("Please provide an argument to this command, telling me what I should do.")
-			.then((message) => DeleteWithDefaultTimeout(message));
+		await deleteWithDefaultTimeoutAsync(await message.reply(
+			"Please provide an argument to this command, telling me what I should do."
+		));
 	}
 }
 
-const createNewReactRolesMessage = async (message: Message) => {
+const createNewReactRolesMessageAsync = async (message: Message) => {
 	if (!message.guild) return;
 	let guild = await GuildModel.findOne({ guildId: message.guild.id });
 
@@ -64,63 +62,66 @@ const createNewReactRolesMessage = async (message: Message) => {
 			return;
 		}
 		// nee: skip
-		await message
-			.reply(
-				"There were no roles found in the db. Create them first before trying to create this message."
-			)
-			.then((message) => DeleteWithDefaultTimeout(message));
+		await deleteWithDefaultTimeoutAsync(await message.reply(
+			"There were no roles found in the db. Create them first before trying to create this message."
+		));
 		return;
 	}
 
 	// ja: skip
-	await message
-		.reply("There already is a reactroles message.")
-		.then((message) => DeleteWithDefaultTimeout(message));
+	await deleteWithDefaultTimeoutAsync(await message.reply("There already is a reactroles message."));
 };
 
-const addNewReactRole = async (message: Message, args: Array<string>) => {
+const addNewReactRoleAsync = async (message: Message, client: DiscordClient) => {
 	if (!message.guild) return;
 	let guild = await GuildModel.findOne({ guildId: message.guild.id });
 	if (!guild) return;
 
-	if (args.length >= 2) {
-		let emojiInput = args[0];
-		if (!isEmoji(emojiInput)) {
-			await message.reply(`"${emojiInput}" is not a valid emoji!`);
-			return;
-		}
+	const emojiRequestMessage = await message.channel.send("Step 1: React with the emoji you'd like to use");
 
-		let roleInput = args[1];
-		let role = message.guild?.roles.cache.find((role) => role.name === roleInput);
+	const emojiId = await emojiRequestMessage.awaitReactions((reaction: MessageReaction, user: User) => (user.id === message.author.id && reaction.message.id === emojiRequestMessage.id), { max: 1, time: 15000 })
+		.then(async (collected) => {
+			let collectedMessageReaction = collected.first();
+			let collectedEmoji = collectedMessageReaction?.emoji;
 
-		if (!role) {
-			await message.reply(`"${roleInput}" is not a valid role!`);
-			return;
-		}
+			await collectedMessageReaction?.remove();
+			return collectedEmoji?.id ?? collectedEmoji?.name;
+		});
 
-		guild.set(`reactRoles.${emojiInput}`, role.id);
-		await guild
-			.save()
-			.catch((err) => {
-				console.log(err?.message ?? err);
-				message.reply(`Ooops, errorken`);
-			})
-			.then(() => message.reply(`Role Added succesfully!`));
-
+	if (emojiId) {
+		await deleteWithDefaultTimeoutAsync(await message.reply("Received the emoji!"));
+	} else {
+		await Promise.all([emojiRequestMessage.delete(), deleteWithDefaultTimeoutAsync(await message.reply("Bruh, you waited too long.. canceling this command."))]);
 		return;
 	}
 
-	await message.reply(
-		`No/too few arguments provided. Make sure to provide an emoji and rolename.\nLike so: \`${guild.prefix}reactroles add EMOJI ROLE_NAME\``
-	);
-};
+	const roleRequestMessage = await emojiRequestMessage.edit("Step 2: Say the name of the role in the current channel. (CASE SENSITIVE)");
 
-const removeEmoji = (str: string) =>
-	str.replace(
-		new RegExp(
-			"\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]",
-			"g"
-		),
-		""
-	);
-const isEmoji = (str: string) => !removeEmoji(str).length;
+	const roleId = await roleRequestMessage.channel.awaitMessages((m: Message) => (m.author.id === message.author.id), { max: 1, time: 15000 })
+		.then(async (collected) => {
+			let collectedMessage = collected.first();
+			let foundRole = message.guild?.roles.cache.find(r => r.name === collectedMessage?.content);
+
+			await collectedMessage?.delete();
+			return foundRole?.id;
+		});
+
+	if (roleId) {
+		await deleteWithDefaultTimeoutAsync(await message.reply("Found your role!"));
+	} else {
+		await Promise.all([
+			roleRequestMessage.delete(),
+			deleteWithDefaultTimeoutAsync(await message.reply("The provided role name was not found or you waited too long. Canceling the command."))
+		]);
+		return;
+	}
+
+	guild.set(`reactRoles.${emojiId}`, roleId);
+	await guild
+		.save()
+		.catch((err) => {
+			console.log(err?.message || err);
+			message.reply(`Ooops, errorken`);
+		})
+	await roleRequestMessage.edit(`\`ReactionRole added succesfully! ( ${emojiId} - ${roleId} )\``);
+};
